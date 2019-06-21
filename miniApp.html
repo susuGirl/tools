@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>myVue</title>
+  <style>
+    #app{
+    text-align: center;
+  }
+</style>
+</head>
+
+<body>
+  <div id="app">
+    <form>
+      <textarea type="text" v-model="oldContent" rows="40" cols="70" placeholder="angular html 代码"></textarea>
+      <button type="button" v-click="changeContent">编译</button>
+      <textarea type="text" v-model="newContent" rows="40" cols="70" placeholder="小程序原语言 html 代码"></textarea>
+    </form>
+    </br>
+    <a href="http://tools.jb51.net/code/css2less">css转less/sass/stylus</a>
+    </br>
+    <a href="http://www.matools.com/less">less转css</a>
+    </br>
+    <a href="http://tool.oschina.net/regex/">在线正则表达式测试</a>
+  </div>
+</body>
+<script>
+  /**
+   * 1、div需统一转换成View，span => text , img => image
+    2、ng-show统一转换为wx:if；
+    3、ng-click统一转换为bindtap；
+    4、ng-repeat统一用wx:for替换；
+    5、ng-class中的样式选择性绑定可以直接把条件绑定语句嵌入class属性
+  */
+
+  class MyVue {
+    constructor(options) {
+      this._init(options)
+    }
+    _init (options) {
+      this.$options = options
+      this.$el = document.querySelector(options.el) 
+      this.$data = options.data
+      this.$methods = options.methods
+
+      this._binding = {}
+      this._obsever(this.$data)
+      this._complie(this.$el)
+    }
+    _obsever (data) {
+      let _this = this
+      let handler = {
+        get(target, key) {
+          return target[key];
+        },
+        set(target, key, newValue) {
+          let res = Reflect.set(target, key, newValue);
+          _this._binding[key].map(item => {
+            item.update();
+          });
+          return res;
+        }
+      };
+      this.$data = new Proxy(data, handler);
+    }
+    _complie(el) {
+      let _this = this
+      let nodes = Array.prototype.slice.call(el.children)
+
+      nodes.map(node => {
+        if (node.children.length && node.children.length > 0) this._complie(node)
+        if (node.hasAttribute('v-click')) {
+          let attrVal = node.getAttribute('v-click')
+          node.onclick = _this.$methods[attrVal].bind(_this.$data)
+        }
+
+        if (node.hasAttribute('v-model') && (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA')) {
+          let attrVal = node.getAttribute('v-model')
+          if (!_this._binding[attrVal]) _this._binding[attrVal] = []
+          _this._binding[attrVal].push(new Watcher(
+            node,
+            _this.$data,
+            attrVal,
+            'value',
+          ))
+          node.addEventListener('input', () => {
+            _this.$data[attrVal] = node.value
+          })
+        }
+        if (node.hasAttribute('v-bind')) {
+          let attrVal = node.getAttribute('v-bind')
+          if (!_this._binding[attrVal]) _this._binding[attrVal] = []
+          _this._binding[attrVal].push(new Watcher(
+            node,
+            _this.$data,
+            attrVal,
+            'innerHTML',
+          ))
+        }
+
+      })
+    }
+  }
+
+  class Watcher {
+    constructor (el, data, key, attr) {
+      this.el = el
+      this.data = data
+      this.key = key
+      this.attr = attr
+      this.update()
+    }
+
+    update () {
+      this.el[this.attr] = this.data[this.key]
+    }
+  }
+
+  window.onload = () => {
+    new MyVue({
+      el: '#app',
+      data: {
+        oldContent: '',
+        newContent: ''
+      },
+      methods: {
+        changeContent
+      }
+    })
+
+    function changeContent () {
+      let temp = this.oldContent
+      let regArr = [
+        {
+          reg: /<(div|h[123456]|header|a|ion-content|ion-footer-bar|font)\s/g,
+          text: '<view '
+        },{
+          reg: /<(div|h[123456]|header|a|ion-content|ion-footer-bar|font)>/g,
+          text: '<view>'
+        },{
+          reg: /<\/(div|h[123456]|header|a|ion-content|ion-footer-bar|font)>/g,
+          text: '</view>'
+        },{
+          reg: /<(span|i)\s/g,
+          text: '<text '
+        },{
+          reg: /<(span|i)>/g,
+          text: '<text>'
+        },{
+          reg: /<\/(span|i)>/g,
+          text: '</text>'
+        },{
+          reg: /<img/g,
+          text: '<image mode="widthFix"'
+        },{
+          reg: /vm[.]data/g,
+          text: 'resData'
+        },{
+          reg: /vm[.]/g,
+          text: ''
+        },{
+          reg: /ng-click/g,
+          text: 'bindtap'
+        },{
+          reg: /(ng-show)|(ng-if)/g,
+          text: 'wx:if'
+        },{
+          reg: /ng-repeat/g,
+          text: 'wx:for'
+        },
+      ]
+      regArr.forEach(o => {
+        temp = temp.replace(o.reg, o.text)
+      })
+      // 处理 image 标签
+      let imgArr = temp.match(/<image mode="widthFix" .*>?/g)
+      imgArr.forEach(i => {
+        let index = temp.indexOf(i)
+        temp = temp.slice(0 , index + i.length) + '</image>' + temp.slice(index + i.length)
+      })
+      // 处理 wx:if
+      let wxIfArr = temp.match(/wx:if(\s*)=(\s*)"([^"]*)"/g)
+      wxIfArr.forEach(i => {
+        let index = temp.indexOf(i)
+        let wxIfText = `${i.replace(/"/, '"{{').slice(0, -1)}'}}"'`
+        temp = temp.slice(0 , index) + wxIfText + temp.slice(index + i.length)
+      })
+      // 处理 bindtap
+      let bindtapArr = temp.match(/bindtap(\s*)=(\s*)"([^"]*)"/g)
+      bindtapArr.forEach(i => {
+        let index = temp.indexOf(i)
+        let bindtapText = i.replace(/\(.*\)/, '')
+        temp = temp.slice(0 , index) + bindtapText + temp.slice(index + i.length)
+      })
+
+
+      // console.log(bindtapArr)
+      this.newContent = temp
+    }
+    // function handleStr (data, matchReg, replaceReg, replaceText) {
+    //   let temp = data
+    //   let getDataArr = temp.match(matchReg)
+    //   getDataArr.forEach(i => {
+    //     let index = temp.indexOf(i)
+    //     let handleText = i.replace(replaceReg, replaceText)
+    //     temp = temp.slice(0 , index) + handleText + temp.slice(index + i.length)
+    //     // console.log('handleText---', handleText)
+    //   })
+    //   return temp
+    // }
+  }
+</script>
+
+</html>
