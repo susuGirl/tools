@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<!-- http://www.ewebeditor.net/demo/retrieve.asp -->
+<html>
+
+<head>
+  <title>文本</title>
+  <style>
+    #app{
+      margin-top: 20px;
+    }
+    .show {
+      width: 375px;
+      height: 667px;
+      border: 1px solid #333333;
+      overflow: hidden;
+      padding: 10px;
+    }
+    .text {
+      width: 375px;
+      height: 600px;
+    }
+    .flex {
+      display: flex;
+      display: -webkit-flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .edit {
+      margin-bottom: 20px;
+    }
+    .code {
+      width: 100%;
+      min-height: 300px;
+    }
+    .right {
+      flex: 1;
+      display: flex;
+      display: -webkit-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .btn {
+      margin-left: 20px;
+    }
+    .btn > button {
+      margin: 10px 0
+    }
+    .input {
+      width: 300px;
+      height: 40px;
+      margin-top: 20px;
+    }
+    .column {
+      display: flex;
+      display: -webkit-flex;
+      flex-direction: column;
+    }
+</style>
+</head>
+
+<body>
+  <div id="app">
+    <div class="flex edit">
+        <div class="show" v-bind="showHtml"></div>
+        <form class="right">
+          <div class="column">
+            <textarea class="text" type="text" v-model="text" rows="40" cols="70" placeholder="请输入文本"></textarea>
+            <div>
+                <input class="input" v-model="imgSrc"/>
+                <button type="button" v-click="addImg">添加图片</button>
+            </div>
+          </div>
+          <div class="column btn">
+              <button type="button" v-click="handleBr">换行</button>
+              <div>
+                  <input class="" v-model="fontColor"/>
+                  <button type="button" v-click="handleFontColor">字体颜色</button>
+              </div>
+              <button type="button" v-click="fontCenter">字体居中</button>
+              <button type="button" v-click="fontRight">字体右对其</button>
+              <div>
+                  <input class="" v-model="fontSize"/>
+                  <button type="button" v-click="handleFontSize">字体大小</button>
+              </div>
+              <button type="button" v-click="look">查看效果</button>
+              <button type="button" v-click="save">保存</button>
+          </div>
+        </form>
+    </div>
+    <div>请复制以下代码到文档</div>
+    </br>
+    <textarea class="code" type="text" v-model="allCode" placeholder="请复制这里的代码"></textarea>
+    </br></br>
+    <div>当前正在编辑的代码</div>
+    </br>
+    <textarea class="code" type="text" v-model="code" placeholder="当前正在编辑的代码"></textarea>
+    
+  </div>
+</body>
+<script>
+
+  class MyVue {
+    constructor(options) { // 接收了一个配置对象
+      this._init(options)
+    }
+    _init (options) {
+      this.$options = options // options 为上面使用时传入的结构体，包括el,data,methods
+      this.$el = document.querySelector(options.el) // el是 #app, this.$el是id为app的Element元素
+      this.$data = options.data // this.$data = {number: 0}
+      this.$methods = options.methods // this.$methods = {increment: function(){}}
+
+      this._binding = {}
+      this._obsever(this.$data)
+      this._complie(this.$el)
+    }
+    _obsever (data) { // 数据劫持：更新数据
+      let _this = this
+      let handler = {
+        get(target, key) {
+          return target[key]; // 获取该对象上key的值
+        },
+        set(target, key, newValue) {
+          let res = Reflect.set(target, key, newValue); // 将新值分配给属性的函数
+          _this._binding[key].map(item => {
+            item.update();
+          });
+          return res;
+        }
+      };
+      // 把代理器返回的对象代理到this.$data，即this.$data是代理后的对象，外部每次对this.$data进行操作时，实际上执行的是这段代码里handler对象上的方法
+      this.$data = new Proxy(data, handler);
+    }
+    _complie(el) { // el 为id为app的Element元素，也就是我们的根元素
+      let _this = this
+      let nodes = Array.prototype.slice.call(el.children) // 将为数组转化为真正的数组
+
+      nodes.map(node => {
+        if (node.children.length && node.children.length > 0) this._complie(node)
+        if (node.hasAttribute('v-click')) { // 如果有v-click属性，我们监听它的onclick事件，触发increment事件，即number++
+          let attrVal = node.getAttribute('v-click')
+          node.onclick = _this.$methods[attrVal].bind(_this.$data) // bind是使data的作用域与method函数的作用域保持一致
+        }
+
+        // 如果有v-model属性，并且元素是INPUT或者TEXTAREA，我们监听它的input事件
+        if (node.hasAttribute('v-model') && (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA')) {
+          let attrVal = node.getAttribute('v-model')
+          if (!_this._binding[attrVal]) _this._binding[attrVal] = []
+          _this._binding[attrVal].push(new Watcher(
+            node, // 对应的 DOM 节点
+            _this.$data,
+            attrVal, // v-model 绑定的值
+            'value',
+          ))
+          node.addEventListener('input', () => {
+            _this.$data[attrVal] = node.value // 使number 的值与 node的value保持一致，已经实现了双向绑定
+          })
+        }
+        if (node.hasAttribute('v-bind')) {
+          let attrVal = node.getAttribute('v-bind')
+          if (!_this._binding[attrVal]) _this._binding[attrVal] = []
+          _this._binding[attrVal].push(new Watcher(
+            node,
+            _this.$data,
+            attrVal, // v-bind 绑定的值
+            'innerHTML',
+          ))
+        }
+
+      })
+    }
+  }
+
+  class Watcher {
+    constructor (el, data, key, attr) {
+      this.el = el // 指令对应的DOM元素
+      this.data = data // 代理的对象 this.$data 数据: {number: 0, count: 0}
+      this.key = key // 指令绑定的值，本例如"num"
+      this.attr = attr // 绑定的属性值，本例为"innerHTML"，"value"
+      this.update()
+    }
+
+    update () {
+      this.el[this.attr] = this.data[this.key]
+    }
+  }
+
+  
+
+  window.onload = () => { // 当文档内容完全加载完成会触发该事件,避免获取不到对象的情况
+    let textStyle = ''
+    new MyVue({
+      el: '#app',
+      data: {
+        text: '',
+        code: '', // 当前正在编辑的代码
+        allCode: '', // 最终代码
+        imgSrc: '',
+        fontColor: '',
+        fontSize: '',
+        textStyle: '',
+        showHtml: '' // 显示页面 https://static.licaimofang.com/wp-content/uploads/2019/06/二维码.jpg
+      },
+      methods: {
+        // changeText () {
+        //   if (this.code.indexOf('<text') == -1) {
+        //     this.code = `<text id='textId'>${this.text}</text>`
+        //   } else {
+        //     this.code = this.code.replace(/id='textId'>.*</, `id='textId'>${this.text}<`)
+        //   }
+        //   console.log('text---', text)
+        // },
+        look() {
+          // this.changeText()
+          if (this.code.indexOf('<text') == -1) {
+            this.code = `<text id='textId'>${this.text}</text>`
+          } else {
+            this.code = this.code.replace(/id='textId'>.*</, `id='textId'>${this.text}<`)
+          }
+          // console.log('code--', this.code)
+        },
+        addImg() {
+          // console.log('imgSrc--', this.imgSrc)
+          // this.code += `<img style='width:100%' src='${this.imgSrc}'/>`
+          // this.showHtml = this.allCode + this.code
+        },
+        handleBr() {
+          if (this.code.indexOf('<text') == -1) {
+            this.code = `<text id='textId'>${this.text}</text>`
+          } else {
+            this.code = this.code.replace(/id='textId'>.*</, `id='textId'>${this.text}<`)
+          }
+          this.code = `</br>${this.code}`
+          this.showHtml = this.allCode + this.code
+          console.log('code--', this.code)
+        },
+        handleFontColor() {
+          // if (this.fontColor) {
+          //   textStyle = `color:${this.fontColor}`
+          //   let temp = `<text style='${textStyle}'`
+          //   this.code = this.code.replace(/<text/, temp)
+          //   // this.showHtml += this.code
+          //   console.log('textStyle--11', textStyle, this.code)
+
+          // }
+          // console.log('fontColor--', this.code)
+        },
+        fontCenter() {
+          // console.log('text--', this.text)
+          // this.style += `text-aligin:center;` 
+          // this.handleStyle()
+        },
+        fontRight() {
+          // console.log('text--', this.text)
+          // this.style += `text-aligin:right;` 
+          // this.handleStyle()
+        },
+        handleFontSize() {
+          // console.log('fontSize--', this.fontSize)
+          // this.style += `font-size:${this.fontSize}` 
+          // this.handleStyle()
+        },
+        save() {
+          if (this.code.indexOf('<text') == -1) {
+            this.code = `<text id='textId'>${this.text}</text>`
+          } else {
+            this.code = this.code.replace(/id='textId'>.*</, `id='textId'>${this.text}<`)
+          }
+          this.allCode = this.allCode + this.code
+        }
+        // handleStyle () {
+        //   console.log('this.code----', this.style)
+        //   let style = `<text style='${this.style}'`
+        //   this.code = this.code.replace(/<text/, style)
+        //   this.showHtml += this.code
+        // }
+      }
+    })
+
+  }
+</script>
+
+</html>
